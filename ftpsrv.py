@@ -25,10 +25,10 @@ from pathlib import Path
 import time
 
 HOST = '127.0.0.1'
-PORT = 8000
 ROOT_DIR = 'root_dir'
-ROOT_PATH = os.path.join('.', ROOT_DIR)
-ANON = True
+PORT = 8000
+IS_ANON = True
+
 
 def get_os_path_separators():
     seps = []
@@ -39,13 +39,18 @@ def get_os_path_separators():
 
 
 class ServerThread(threading.Thread):
-    def __init__(self, conn, addr):
+    def __init__(self, host, conn, addr, is_anon, root_dir):
         super().__init__()
+        self.host = host
         self.conn = conn
         self.addr = addr
-        self.rootdir = ROOT_PATH
-        self.cwd = self.rootdir
-        self.anon = ANON
+        self.root = os.path.abspath(root_dir)
+        self.cwd = self.root
+        self.is_anon = is_anon
+        # Passive mode fields
+        self.pasv_mode = False
+        self.serversocket = None
+        # Active mode fields
         self.datasocket = None
         self.data_addr = None
         self.data_port = None
@@ -61,26 +66,36 @@ class ServerThread(threading.Thread):
             cmd, arg = cmd[:4].strip(), cmd[4:].strip()
 
             now = time.strftime('%d-%m-%Y %H:%M:%S')
-            print(f'[{now}]\tcmd: <{cmd}> arg: <{arg}> \t{len(cmd)}')
+            print(f'[{now}]\tcmd: <{cmd}> arg: <{arg}>')
 
             try:
                 method = getattr(self, cmd)
                 s, m = method(arg)
-                self._sendall(s,m)
+                self._sendall(s, m)
             except Exception as e:
                 print(f'Got exception {e}')
                 self._sendall(500, 'Bad command or not implemented')
 
     def _sendall(self, status, data):
-
-        print(f'cwd real: {self.cwd}')
-
         msg = f'{status} {data} \r\n'
+        print(f'attempt to send : {msg.encode()}')
         self.conn.sendall(msg.encode())
 
     def _recvall(self, amount):
         data_raw = self.conn.recv(amount)
+        print(f'received {data_raw}')
         return data_raw.decode()
+
+    def _start_datasock(self):
+        if self.pasv_mode:
+            self.datasocket, _ = self.serversocket.accept()
+        self.datasocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.datasocket.connect((self.data_addr, self.data_port))
+
+    def _stop_datasock(self):
+        self.datasocket.close()
+        if self.pasv_mode:
+            self.serversocket.close()
 
     def _is_name_valid(self, name):
         test_path = (Path(self.cwd) / name).resolve()
@@ -88,8 +103,17 @@ class ServerThread(threading.Thread):
             return False
         return True
 
-    def PORT(self, cmd):
-        host_port = cmd.split(',')
+    def _get_entry_info(self, entry):
+        info = entry.stat()
+        size = info.st_size
+        modified = info.st_mtime
+        return f'{size} {modified}'
+
+    def NOOP(self, arg=None):
+        return 200, 'OK.'
+
+    def PORT(self, arg=None):
+        host_port = arg.split(',')
         self.data_addr = '.'.join(host_port[:4])
         self.data_port = (int(host_port[4]) << 8) + int(host_port[5])
         return 200, 'Get port.'
@@ -101,13 +125,13 @@ class ServerThread(threading.Thread):
         return 211, 'No features.'
 
     def USER(self, arg=None):
-        if self.anon:
+        if self.is_anon:
             return 230, 'OK.'
         else:
             return 530, 'Incorrect'
 
     def PASS(self, arg=None):
-        if self.anon:
+        if self.is_anon:
             return 230, 'OK.'
         else:
             return 530, 'Incorrect'
@@ -116,16 +140,16 @@ class ServerThread(threading.Thread):
         return 221, 'Goodbye'
 
     def CDUP(self, arg=None):
-        if self.cwd == self.rootdir:
+        if self.cwd == self.root:
             return 230, 'OK.'
         self.cwd = os.path.abspath(os.path.join(self.cwd, '..'))
         return 230, 'OK.'
 
     def PWD(self, arg=None):
-        cwd = os.path.relpath(self.cwd, self.rootdir)
-        return 257, f'"{cwd}"'
+        cwd = os.path.relpath(self.cwd, self.root)
+        return 257, f'"/{cwd}"'
 
-    def MKD(self, arg):
+    def MKD(self, arg=None):
         if not self._is_name_valid(arg):
             return 553, f'Wrong directory name {arg}'
         try:
@@ -134,7 +158,7 @@ class ServerThread(threading.Thread):
             return 553, f'Directory exists {arg}'
         return 250, 'Created'
 
-    def CWD(self, arg):
+    def CWD(self, arg=None):
         if not self._is_name_valid(arg):
             return 553, f'Wrong path {arg}'
         cwd = os.path.abspath(os.path.join(self.cwd, arg))
@@ -143,34 +167,45 @@ class ServerThread(threading.Thread):
         self.cwd = cwd
         return 250, 'OK.'
 
-    def _start_datasock(self):
-        self.datasock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.datasock.connect((self.data_addr, self.data_port))
-
-    def _stop_datasock(self):
-        self.datasock.close()
-
-    def LIST(self, cmd):
+    def LIST(self, arg):
         self._sendall(150, 'Directory listing')
         self._start_datasock()
-        for t in os.listdir(self.cwd):
-            print(t)
-            k = os.path.join(self.cwd, t)
-            self.datasock.send(f'{k}\r\n'.encode())
+        entries = Path(self.cwd)
+        for entry in entries.iterdir():
+            is_dir = '-'
+            if entry.is_dir():
+                is_dir = 'd'
+            info = self._get_entry_info(entry)
+            data = f'{is_dir}\t{info}\t{entry.name}\n'
+            print(data)
+            self.datasocket.send(f'{data}\r\n'.encode())
         self._stop_datasock()
-        self._sendall(226, 'Directory send OK.')
+        return 226, 'Directory send OK.'
+
+    def PASV(self, arg):
+        self.pasv_mode = True
+        self.serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.serversocket.bind((self.host, 0))
+        self.serversocket.listen(1)
+        self.data_addr, self.data_port = self.serversocket.getsockname()
+        host_ip = self.data_addr.replace('.', ',')
+        port = f'{self.data_port >> 8 & 0xFF},{self.data_port & 0xFF}'
+        return 227, f'Entering Passive Mode ({host_ip},{port})'
 
 
 class Server():
-    def __init__(self, host, port):
+    def __init__(self, host, port, is_anon, root_dir):
+        self.host = host
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.bind((host, port))
+        self.is_anon = is_anon
+        self.root_dir = root_dir
 
     def run(self):
         self.sock.listen(3)
         while True:
             conn, addr = self.sock.accept()
-            th = ServerThread(conn, addr)
+            th = ServerThread(self.host, conn, addr, self.is_anon, self.root_dir)
             th.daemon = True
             th.start()
 
@@ -179,9 +214,8 @@ class Server():
 
 
 if __name__ == '__main__':
-    ftp = Server(HOST, PORT)
+    ftp = Server(HOST, PORT, IS_ANON, ROOT_DIR)
     print(f'Server is listening on {HOST}:{PORT} ...')
     ftp.daemon = True
     ftp.run()
     ftp.stop()
-
