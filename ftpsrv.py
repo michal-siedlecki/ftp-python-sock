@@ -137,28 +137,6 @@ class ServerThread(threading.Thread):
 
     # FTP API Commands
 
-    # Runs into an error
-    # def HELP(self, arg=None):
-    #     """
-    #     The HELP command can be issued by the client to retrieve information
-    #     about the FTP server’s implementation of the protocol. Most FTP servers will return a listing of supported
-    #     (or recognized) commands as a response to the HELP command. Because no format for the response is defined,
-    #     the response to the HELP command is usually only useful to the user and not necessarily the FTP client software.
-    #     This command can also be followed by a parameter that is another FTP command.
-    #     In this case, the server may choose to respond with additional information about its specific
-    #     implementation of the specified command.
-    #     :param arg:
-    #     :return:
-    #     """
-    #     if arg and arg not in COMMANDS:
-    #         return 500, 'No such function.'
-    #     if arg.strip() == '':
-    #         info = ', '.join(COMMANDS)
-    #     else:
-    #         method = getattr(self, arg)
-    #         info = method.__doc__
-    #     return 211, info
-
     def RETR(self, arg=None):
         """
         A client issues the RETR command after successfully establishing a data connection
