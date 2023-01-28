@@ -9,9 +9,9 @@ https://www.rfc-editor.org/rfc/rfc5797#section-2.4
 
 Mandatory commands:
 
-      ABOR, ACCT, ALLO, APPE, CWD, DELE, HELP, LIST, MODE, NLST, NOOP,
-      PASS, PASV, PORT, QUIT, REIN, REST, RETR, RNFR, RNTO, SITE, STAT,
-      STOR, STRU, TYPE, USER
+      ABOR, ACCT, ALLO, APPE, CWD*, DELE, HELP, LIST*, MODE, NLST, NOOP*,
+      PASS*, PASV*, PORT*, QUIT, REIN, REST, RETR, RNFR, RNTO, SITE, STAT,
+      STOR, STRU, TYPE, USER*
 
       Optional commands:
 
@@ -19,23 +19,21 @@ Mandatory commands:
 """
 
 import os
+import time
 import socket
 import threading
 from pathlib import Path
-import time
 
+# Config
 HOST = '127.0.0.1'
 ROOT_DIR = 'root_dir'
 PORT = 8000
 IS_ANON = True
 
-
-def get_os_path_separators():
-    seps = []
-    for sep in os.path.sep, os.path.altsep:
-        if sep:
-            seps.append(sep)
-    return seps
+# Const
+# Line terminators
+CRLF = '\r\n'
+B_CRLF = b'\r\n'
 
 
 class ServerThread(threading.Thread):
@@ -47,6 +45,7 @@ class ServerThread(threading.Thread):
         self.root = os.path.abspath(root_dir)
         self.cwd = self.root
         self.is_anon = is_anon
+        self.type = 'I'  # Binary mode default
         # Passive mode fields
         self.pasv_mode = False
         self.serversocket = None
@@ -77,20 +76,19 @@ class ServerThread(threading.Thread):
                 self._sendall(500, 'Bad command or not implemented')
 
     def _sendall(self, status, data):
-        msg = f'{status} {data} \r\n'
-        print(f'attempt to send : {msg.encode()}')
+        msg = f'{status} {data} {CRLF}'
         self.conn.sendall(msg.encode())
 
     def _recvall(self, amount):
         data_raw = self.conn.recv(amount)
-        print(f'received {data_raw}')
         return data_raw.decode()
 
     def _start_datasock(self):
         if self.pasv_mode:
             self.datasocket, _ = self.serversocket.accept()
-        self.datasocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.datasocket.connect((self.data_addr, self.data_port))
+        else:
+            self.datasocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.datasocket.connect((self.data_addr, self.data_port))
 
     def _stop_datasock(self):
         self.datasocket.close()
@@ -110,7 +108,28 @@ class ServerThread(threading.Thread):
         return f'{size} {modified}'
 
     def NOOP(self, arg=None):
+        """
+        The NOOP command does not cause the server to perform any action
+        beyond acknowledging the receipt of the command.
+        :param arg:
+        :return:
+        """
         return 200, 'OK.'
+
+    def TYPE(self, arg=None):
+        """
+        The TYPE command is issued to inform the server of the type of data that is being transferred by the client.
+        Most modern Windows FTP clients deal only with type A (ASCII) and type I (image/binary).
+        :param arg:
+        :return:
+        """
+        if arg == 'A':
+            self.type = arg
+            return 200, 'OK.'
+        if arg == 'I':
+            self.type = arg
+            return 200, 'OK.'
+        return 500, 'Bad command or not implemented'
 
     def PORT(self, arg=None):
         host_port = arg.split(',')
@@ -121,8 +140,43 @@ class ServerThread(threading.Thread):
     def SYST(self, arg=None):
         return 215, 'UNIX Type: L8'
 
+    def STOR(self, arg=None):
+        """
+        A client issues the STOR command after successfully establishing a data connection when it wishes to upload
+        a copy of a local file to the server. The client provides the file name it wishes to use for the upload.
+        If the file already exists on the server, it is replaced by the uploaded file.
+        If the file does not exist, it is created.
+        This command does not affect the contents of the client's local copy of the file.
+        :param arg:
+        :return:
+        """
+        if not self._is_name_valid(arg):
+            return 553, f'File name not allowed'
+        self._sendall(150, 'Opening data connection')
+        self._start_datasock()
+        new_file_b = b''
+        while True:
+            new_bytes = self.datasocket.recv(2)
+            if not new_bytes or new_bytes == B_CRLF:
+                break
+            new_file_b += new_bytes
+        self.datasocket.close()
+        new_file = new_file_b.decode()
+        path = os.path.join(self.cwd, arg)
+        with open(path, 'w') as f:
+            f.write(new_file)
+        return 226, 'Closing data connection'
+
     def FEAT(self, arg=None):
-        return 211, 'No features.'
+        """
+        The FEAT command provides FTP clients with a mechanism of quickly determining
+        what extended features the FTP server supports. If this command is supported, the server
+        will reply with a multi-line response where each line of the response contains an extended feature command
+        supported by the server.
+        :param arg:
+        :return:
+        """
+        return 500, 'No extended features.'
 
     def USER(self, arg=None):
         if self.is_anon:
@@ -176,8 +230,7 @@ class ServerThread(threading.Thread):
             if entry.is_dir():
                 is_dir = 'd'
             info = self._get_entry_info(entry)
-            data = f'{is_dir}\t{info}\t{entry.name}\n'
-            print(data)
+            data = f'{is_dir}\t{info}\t{entry.name}'
             self.datasocket.send(f'{data}\r\n'.encode())
         self._stop_datasock()
         return 226, 'Directory send OK.'
@@ -193,8 +246,9 @@ class ServerThread(threading.Thread):
         return 227, f'Entering Passive Mode ({host_ip},{port})'
 
 
-class Server():
+class Server(threading.Thread):
     def __init__(self, host, port, is_anon, root_dir):
+        super().__init__()
         self.host = host
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.bind((host, port))
@@ -215,7 +269,8 @@ class Server():
 
 if __name__ == '__main__':
     ftp = Server(HOST, PORT, IS_ANON, ROOT_DIR)
-    print(f'Server is listening on {HOST}:{PORT} ...')
+    print(f'Server is listening on {HOST}:{PORT}')
     ftp.daemon = True
-    ftp.run()
+    ftp.start()
+    stop_server = input('Press enter to stop ...')
     ftp.stop()
