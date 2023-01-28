@@ -9,9 +9,9 @@ https://www.rfc-editor.org/rfc/rfc5797#section-2.4
 
 Mandatory commands:
 
-      ABOR, ACCT, ALLO, APPE, CWD*, DELE, HELP, LIST*, MODE, NLST, NOOP*,
-      PASS*, PASV*, PORT*, QUIT, REIN, REST, RETR, RNFR, RNTO, SITE, STAT,
-      STOR, STRU, TYPE, USER*
+      ABOR, ACCT, ALLO, APPE*, CWD*, DELE*, HELP, LIST*, MODE, NLST, NOOP*,
+      PASS*, PASV*, PORT*, QUIT*, REIN, REST, RETR, RNFR, RNTO, SITE, STAT,
+      STOR*, STRU*, TYPE*, USER*
 
       Optional commands:
 
@@ -31,9 +31,13 @@ PORT = 8000
 IS_ANON = True
 
 # Const
-# Line terminators
+
 CRLF = '\r\n'
 B_CRLF = b'\r\n'
+
+COMMANDS = ['ABOR', 'ACCT', 'ALLO', 'APPE', 'CWD', 'DELE', 'HELP', 'LIST', 'MODE', 'NLST', 'NOOP',
+            'PASS', 'PASV', 'PORT', 'QUIT', 'REIN', 'REST', 'RETR', 'RNFR', 'RNTO', 'SITE', 'STAT',
+            'STOR', 'STRU', 'TYPE', 'USER', 'CDUP', 'MKD', 'PWD', 'RMD', 'SMNT', 'STOU', 'SYST', 'FEAT']
 
 
 class ServerThread(threading.Thread):
@@ -58,22 +62,23 @@ class ServerThread(threading.Thread):
         self._sendall(220, 'Welcome!')
 
         while True:
-            cmd = self._recvall(256)
+            cmd = self._recvuntil(self.conn, B_CRLF)
+            cmd, arg = cmd[:4].strip(), cmd[4:].strip()
+
+            now = time.strftime('%H:%M:%S')
+            print(f'[{now}]\tcmd: \t<{cmd}> \targ: <{arg}>')
 
             if not cmd:
                 break
-            cmd, arg = cmd[:4].strip(), cmd[4:].strip()
-
-            now = time.strftime('%d-%m-%Y %H:%M:%S')
-            print(f'[{now}]\tcmd: <{cmd}> arg: <{arg}>')
-
             try:
                 method = getattr(self, cmd)
-                s, m = method(arg)
-                self._sendall(s, m)
+                status, message = method(arg)
+                self._sendall(status, message)
             except Exception as e:
                 print(f'Got exception {e}')
                 self._sendall(500, 'Bad command or not implemented')
+
+    # Private methods
 
     def _sendall(self, status, data):
         msg = f'{status} {data} {CRLF}'
@@ -82,6 +87,14 @@ class ServerThread(threading.Thread):
     def _recvall(self, amount):
         data_raw = self.conn.recv(amount)
         return data_raw.decode()
+
+    def _recvuntil(self, sock, end):
+        out_b = b''
+        while True:
+            out_b += sock.recv(1)
+            if end in out_b:
+                break
+        return out_b.decode()
 
     def _start_datasock(self):
         if self.pasv_mode:
@@ -106,6 +119,97 @@ class ServerThread(threading.Thread):
         size = info.st_size
         modified = info.st_mtime
         return f'{size} {modified}'
+
+    def _create_or_append(self, mode, filename):
+        if not self._is_name_valid(filename):
+            return 553, f'File name not allowed'
+        self._sendall(150, 'Opening data connection')
+        self._start_datasock()
+        new_file = self._recvuntil(self.datasocket, B_CRLF)
+        self.datasocket.close()
+        path = os.path.join(self.cwd, filename)
+        try:
+            with open(path, mode) as f:
+                f.write(new_file)
+        except Exception:
+            return False
+        return True
+
+    # FTP API Commands
+
+    # Runs into an error
+    # def HELP(self, arg=None):
+    #     """
+    #     The HELP command can be issued by the client to retrieve information
+    #     about the FTP server’s implementation of the protocol. Most FTP servers will return a listing of supported
+    #     (or recognized) commands as a response to the HELP command. Because no format for the response is defined,
+    #     the response to the HELP command is usually only useful to the user and not necessarily the FTP client software.
+    #     This command can also be followed by a parameter that is another FTP command.
+    #     In this case, the server may choose to respond with additional information about its specific
+    #     implementation of the specified command.
+    #     :param arg:
+    #     :return:
+    #     """
+    #     if arg and arg not in COMMANDS:
+    #         return 500, 'No such function.'
+    #     if arg.strip() == '':
+    #         info = ', '.join(COMMANDS)
+    #     else:
+    #         method = getattr(self, arg)
+    #         info = method.__doc__
+    #     return 211, info
+
+    def RETR(self, arg=None):
+        """
+        A client issues the RETR command after successfully establishing a data connection
+        when it wishes to download a copy of a file on the server. The client provides the file name
+        it wishes to download along with the RETR command. The server will send a copy of the file to the client.
+        This command does not affect the contents of the server’s copy of the file.
+        :param arg:
+        :return:
+        """
+        if not self._is_name_valid(arg):
+            return 553, f'File name not allowed'
+        file_path = os.path.abspath(os.path.join(self.cwd, arg))
+        if not Path(file_path).exists():
+            return 553, f'File not exists {arg}'
+        self._sendall(150, 'Sending file')
+        self._start_datasock()
+        with open(file_path, 'r') as f:
+            data = f.read()
+        self.datasocket.send(f'{data}\r\n'.encode())
+        self._stop_datasock()
+        return 250, 'OK.'
+
+    def STRU(self, arg=None):
+        """
+        The STRU command is issued with a single Telnet character parameter that specifies a file structure
+        for the server to use for file transfers.
+        The following codes are assigned for structure:
+        F - File (no record structure)
+        R - Record structure (Not implemented)
+        P - Page structure (Not implemented)
+        :param arg:
+        :return:
+        """
+        if arg == 'F':
+            return 200, 'OK.'
+        return 500, 'Bad command or not implemented'
+
+    def DELE(self, arg=None):
+        """
+        Delete file
+        :param arg:
+        :return:
+        """
+        if not self._is_name_valid(arg):
+            return 553, f'Wrong file name {arg}'
+
+        if not Path(os.path.join(self.cwd, arg)).exists():
+            return 553, f'File not exists {arg}'
+
+        os.remove(os.path.join(self.cwd, arg))
+        return 250, 'Deleted'
 
     def NOOP(self, arg=None):
         """
@@ -150,22 +254,22 @@ class ServerThread(threading.Thread):
         :param arg:
         :return:
         """
-        if not self._is_name_valid(arg):
-            return 553, f'File name not allowed'
-        self._sendall(150, 'Opening data connection')
-        self._start_datasock()
-        new_file_b = b''
-        while True:
-            new_bytes = self.datasocket.recv(2)
-            if not new_bytes or new_bytes == B_CRLF:
-                break
-            new_file_b += new_bytes
-        self.datasocket.close()
-        new_file = new_file_b.decode()
-        path = os.path.join(self.cwd, arg)
-        with open(path, 'w') as f:
-            f.write(new_file)
-        return 226, 'Closing data connection'
+        if self._create_or_append(mode='w', filename=arg):
+            return 226, 'Closing data connection'
+        return 501, 'Failed to create file'
+
+    def APPE(self, arg=None):
+        """
+        A client issue the APPE command after successfully establishing a data connection
+        when it wishes to upload data to the server. The client provides the file name it wishes to use for the upload.
+        If the file already exists on the server, the data is appended to the existing file.
+        If the file does not exist, it is created.
+        :param arg:
+        :return:
+        """
+        if self._create_or_append(mode='a', filename=arg):
+            return 226, 'Closing data connection'
+        return 501, 'Failed to append file'
 
     def FEAT(self, arg=None):
         """
