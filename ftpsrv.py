@@ -9,8 +9,8 @@ https://www.rfc-editor.org/rfc/rfc5797#section-2.4
 
 Mandatory commands:
 
-      ABOR, ACCT, ALLO, APPE*, CWD*, DELE*, HELP, LIST*, MODE, NLST, NOOP*,
-      PASS*, PASV*, PORT*, QUIT*, REIN, REST, RETR, RNFR, RNTO, SITE, STAT,
+      ABOR, ACCT, ALLO, APPE*, CWD*, DELE*, HELP, LIST*, MODE*, NLST, NOOP*,
+      PASS*, PASV*, PORT*, QUIT*, REIN, REST, RETR*, RNFR, RNTO, SITE, STAT,
       STOR*, STRU*, TYPE*, USER*
 
       Optional commands:
