@@ -89,14 +89,13 @@ class ServerThread(threading.Thread):
         return data_raw.decode()
 
     def _recvuntil(self, sock, end):
-        out_b = b''
-        out_b = sock.recv(1024)
-        # while True:
-        #     out_b += sock.recv(1)
-        #     print(out_b)
-        #     if end in out_b:
-        #         break
-        return out_b.decode()
+        out = b''
+        while end not in out:
+            new_bytes = sock.recv(1)
+            if not new_bytes:
+                break
+            out += new_bytes
+        return out.decode()
 
     def _start_datasock(self):
         if self.pasv_mode:
@@ -128,12 +127,15 @@ class ServerThread(threading.Thread):
         self._sendall(150, 'Opening data connection')
         self._start_datasock()
         new_file = self._recvuntil(self.datasocket, B_CRLF)
+        if self.type == 'I':
+            new_file = new_file.encode()
         self.datasocket.close()
         path = os.path.join(self.cwd, filename)
         try:
             with open(path, mode) as f:
                 f.write(new_file)
-        except Exception:
+        except Exception as e:
+            print(e)
             return False
         return True
 
