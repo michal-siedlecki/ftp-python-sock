@@ -49,7 +49,7 @@ class ServerThread(threading.Thread):
         self.root = os.path.abspath(root_dir)
         self.cwd = self.root
         self.is_anon = is_anon
-        self.type = 'I'  # Binary mode default
+        self.type = 'A'  # ASCII mode default
         # Passive mode fields
         self.pasv_mode = False
         self.serversocket = None
@@ -90,10 +90,12 @@ class ServerThread(threading.Thread):
 
     def _recvuntil(self, sock, end):
         out_b = b''
-        while True:
-            out_b += sock.recv(1)
-            if end in out_b:
-                break
+        out_b = sock.recv(1024)
+        # while True:
+        #     out_b += sock.recv(1)
+        #     print(out_b)
+        #     if end in out_b:
+        #         break
         return out_b.decode()
 
     def _start_datasock(self):
@@ -136,6 +138,39 @@ class ServerThread(threading.Thread):
         return True
 
     # FTP API Commands
+
+    def RNFR(self, arg=None):
+        """
+        The RNFR command is issued when an FTP client wants to rename a file on the server.
+        The client specifies the name of the file to be renamed along with the command.
+        After issuing an RNFR command, an RNTO command must immediately follow.
+        :param arg:
+        :return:
+        """
+        if not self._is_name_valid(arg):
+            return 553, f'File name not allowed'
+        file_path = os.path.abspath(os.path.join(self.cwd, arg))
+        if not Path(file_path).exists():
+            return 553, f'File not exists {arg}'
+        self.filename_cache = arg
+        return 350, 'File ready to rename'
+    def RNTO(self, arg=None):
+        """
+        The RNTO command is used to specify the new name of a file specified in a preceding RNFR (Rename From) command.
+
+        :param arg:
+        :return:
+        """
+        if not self._is_name_valid(arg):
+            return 553, f'File name not allowed'
+        old_filename_path = os.path.abspath(os.path.join(self.cwd, self.filename_cache))
+        new_filename_path = os.path.abspath(os.path.join(self.cwd, arg))
+        try:
+            os.rename(old_filename_path, new_filename_path)
+        except Exception as e:
+            print(e)
+            return 553, f'Failed to rename {arg}'
+        return 250, f'File renamed to {arg}'
 
     def RETR(self, arg=None):
         """
@@ -232,7 +267,11 @@ class ServerThread(threading.Thread):
         :param arg:
         :return:
         """
-        if self._create_or_append(mode='w', filename=arg):
+        if self.type == 'A':
+            mode = 'w'
+        else:
+            mode = 'wb'
+        if self._create_or_append(mode=mode, filename=arg):
             return 226, 'Closing data connection'
         return 501, 'Failed to create file'
 
