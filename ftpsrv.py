@@ -10,7 +10,7 @@ https://www.rfc-editor.org/rfc/rfc5797#section-2.4
 Mandatory commands:
 
       ABOR, ACCT, ALLO, APPE*, CWD*, DELE*, HELP, LIST*, MODE*, NLST, NOOP*,
-      PASS*, PASV*, PORT*, QUIT*, REIN, REST, RETR*, RNFR, RNTO, SITE, STAT,
+      PASS*, PASV*, PORT*, QUIT*, REIN, REST, RETR*, RNFR*, RNTO*, SITE, STAT,
       STOR*, STRU*, TYPE*, USER*
 
       Optional commands:
@@ -23,12 +23,14 @@ import time
 import socket
 import threading
 from pathlib import Path
+from datetime import date
 
 # Config
 HOST = '127.0.0.1'
 ROOT_DIR = 'root_dir'
 PORT = 8000
 IS_ANON = True
+OWNER = 'admin'  # and group
 
 # Const
 
@@ -41,7 +43,7 @@ COMMANDS = ['ABOR', 'ACCT', 'ALLO', 'APPE', 'CWD', 'DELE', 'HELP', 'LIST', 'MODE
 
 
 class ServerThread(threading.Thread):
-    def __init__(self, host, conn, addr, is_anon, root_dir):
+    def __init__(self, host, conn, addr, is_anon, root_dir, owner):
         super().__init__()
         self.host = host
         self.conn = conn
@@ -50,6 +52,8 @@ class ServerThread(threading.Thread):
         self.cwd = self.root
         self.is_anon = is_anon
         self.type = 'A'  # ASCII mode default
+        self.abor = False
+        self.owner = owner
         # Passive mode fields
         self.pasv_mode = False
         self.serversocket = None
@@ -116,10 +120,17 @@ class ServerThread(threading.Thread):
         return True
 
     def _get_entry_info(self, entry):
-        info = entry.stat()
-        size = info.st_size
-        modified = info.st_mtime
-        return f'{size} {modified}'
+        stats = entry.stat()
+        type = 'd' if entry.is_dir() else '-'
+        base = 'rwxrwxrwx'
+        links = stats.st_nlink
+        owner = self.owner
+        group = self.owner  # For sake of simplicity
+        size = stats.st_size
+        modified_date = date.fromtimestamp(stats.st_mtime)
+        date_format = '%b %d %H:%m'
+        modified = modified_date.strftime(date_format)
+        return f'{type}{base} {links} {owner} {group} {size} {modified}'
 
     def _create_or_append(self, mode, filename):
         if not self._is_name_valid(filename):
@@ -156,6 +167,7 @@ class ServerThread(threading.Thread):
             return 553, f'File not exists {arg}'
         self.filename_cache = arg
         return 350, 'File ready to rename'
+
     def RNTO(self, arg=None):
         """
         The RNTO command is used to specify the new name of a file specified in a preceding RNFR (Rename From) command.
@@ -344,21 +356,21 @@ class ServerThread(threading.Thread):
         self.cwd = cwd
         return 250, 'OK.'
 
-    def LIST(self, arg):
+    def LIST(self, arg=None):
         self._sendall(150, 'Directory listing')
         self._start_datasock()
         entries = Path(self.cwd)
         for entry in entries.iterdir():
-            is_dir = '-'
-            if entry.is_dir():
-                is_dir = 'd'
             info = self._get_entry_info(entry)
-            data = f'{is_dir}\t{info}\t{entry.name}'
+            data = f'{info}\t{entry.name}'
             self.datasocket.send(f'{data}\r\n'.encode())
         self._stop_datasock()
         return 226, 'Directory send OK.'
 
-    def PASV(self, arg):
+    def NLST(self, arg=None):
+        return self.LIST(arg)
+
+    def PASV(self, arg=None):
         self.pasv_mode = True
         self.serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.serversocket.bind((self.host, 0))
@@ -370,19 +382,20 @@ class ServerThread(threading.Thread):
 
 
 class Server(threading.Thread):
-    def __init__(self, host, port, is_anon, root_dir):
+    def __init__(self, host, port, is_anon, root_dir, owner):
         super().__init__()
         self.host = host
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.bind((host, port))
         self.is_anon = is_anon
         self.root_dir = root_dir
+        self.owner = owner
 
     def run(self):
         self.sock.listen(3)
         while True:
             conn, addr = self.sock.accept()
-            th = ServerThread(self.host, conn, addr, self.is_anon, self.root_dir)
+            th = ServerThread(self.host, conn, addr, self.is_anon, self.root_dir, self.owner)
             th.daemon = True
             th.start()
 
@@ -391,7 +404,7 @@ class Server(threading.Thread):
 
 
 if __name__ == '__main__':
-    ftp = Server(HOST, PORT, IS_ANON, ROOT_DIR)
+    ftp = Server(HOST, PORT, IS_ANON, ROOT_DIR, OWNER)
     print(f'Server is listening on {HOST}:{PORT}')
     ftp.daemon = True
     ftp.start()
