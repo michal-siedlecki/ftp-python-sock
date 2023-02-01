@@ -62,8 +62,8 @@ class ServerThread(threading.Thread):
         self._sendall(220, 'Welcome!')
 
         while True:
-            cmd = self._recvuntil(self.conn, B_CRLF)
-            cmd, arg = cmd[:4].strip(), cmd[4:].strip()
+            msg = self._recvuntil(self.conn, B_CRLF)
+            cmd, arg = msg[:4].strip(), msg[4:].strip()
 
             now = time.strftime('%H:%M:%S')
             print(f'[{now}]\tcmd: \t<{cmd}> \targ: <{arg}>')
@@ -89,13 +89,13 @@ class ServerThread(threading.Thread):
         return data_raw.decode()
 
     def _recvuntil(self, sock, end):
-        out = b''
-        while end not in out:
-            new_bytes = sock.recv(1)
-            if not new_bytes:
+        buff = bytearray()
+        while end not in buff:
+            new_byte = sock.recv(1)
+            if not new_byte:
                 break
-            out += new_bytes
-        return out.decode()
+            buff.extend(new_byte)
+        return buff.decode()
 
     def _start_datasock(self):
         if self.pasv_mode:
