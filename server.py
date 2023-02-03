@@ -1,8 +1,11 @@
 import socket
 import threading
 
+
 class ServerThread(threading.Thread):
-    def __init__(self, host, port, server_type=None, server_config=None, sock=None, **kwargs):
+    def __init__(
+        self, host, port, server_type=None, server_config=None, sock=None, **kwargs
+    ):
         super().__init__()
         self.host = host
         self.port = port
@@ -11,16 +14,16 @@ class ServerThread(threading.Thread):
         self.server_config = server_config
         self.queue = 3
 
-
     def run(self):
-
         _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         _sock.bind((self.host, self.port))
         _sock.listen(self.queue)
         while True:
             self.sock, _ = _sock.accept()
-            print(f'{_} connected')
-            self.server_type(host=self.host,port=self.port, **self.server_config, sock=self.sock).start()
+            print(f"{_} connected")
+            self.server_type(
+                host=self.host, port=self.port, **self.server_config, sock=self.sock
+            ).start()
 
     def stop(self):
         self.sock.close()
@@ -37,7 +40,6 @@ class ServerThread(threading.Thread):
         s = self.sock if not sock else sock
         while end not in buff:
             new_byte = s.recv(1)
-            print(new_byte)
             if not new_byte:
                 break
             buff.extend(new_byte)

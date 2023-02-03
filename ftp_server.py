@@ -14,35 +14,35 @@ ALLOWED_COMMANDS = ['ABOR', 'ACCT', 'ALLO', 'APPE', 'CWD', 'DELE', 'HELP', 'LIST
 class FTPServerThread(ServerThread):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.root = os.path.abspath(kwargs.get('root_dir'))
-        self.is_anon = kwargs.get('is_anon')
-        self.owner = kwargs.get('owner')
+        self.root = os.path.abspath(kwargs.get("root_dir"))
+        self.is_anon = kwargs.get("is_anon")
+        self.owner = kwargs.get("owner")
         self.cwd = self.root
         self.pasv_mode = False
-        self.type = 'A'
-        self.crlf = '\r\n'
-        self.bcrlf = b'\r\n'
+        self.type = "A"
+        self.crlf = "\r\n"
+        self.bcrlf = b"\r\n"
 
     def run(self):
-        self._ftp_response(220, 'Welcome!')
+        self._ftp_response(220, "Welcome!")
         while True:
             msg = self._recvuntil(self.bcrlf)
             cmd, arg = msg[:4].strip(), msg[4:].strip()
 
-            now = time.strftime('%H:%M:%S')
-            print(f'[{now}]\tcmd: \t<{cmd}> \targ: <{arg}>')
+            now = time.strftime("%H:%M:%S")
+            print(f"[{now}]\tcmd: \t<{cmd}> \targ: <{arg}>")
             if not cmd:
                 break
             if cmd not in ALLOWED_COMMANDS:
-                self._ftp_response(500, 'Bad command or not implemented')
+                self._ftp_response(500, "Bad command or not implemented")
                 continue
             try:
                 method = getattr(self, cmd)
                 status, message = method(arg)
                 self._ftp_response(status, message)
             except Exception as e:
-                print(f'Got exception {e}')
-                self._ftp_response(500, 'Bad command or not implemented')
+                print(f"Got exception {e}")
+                self._ftp_response(500, "Bad command or not implemented")
 
     def _ftp_response(self, status, message):
         """
@@ -51,9 +51,8 @@ class FTPServerThread(ServerThread):
         :param message:
         :return:
         """
-        msg = f'{status} {message} {self.crlf}'
+        msg = f"{status} {message} {self.crlf}"
         self.sock.sendall(msg.encode())
-
 
     def _start_datasock(self):
         if self.pasv_mode:
@@ -75,24 +74,24 @@ class FTPServerThread(ServerThread):
 
     def _get_entry_info(self, entry):
         stats = entry.stat()
-        type = 'd' if entry.is_dir() else '-'
-        base = 'rwxrwxrwx'
+        type = "d" if entry.is_dir() else "-"
+        base = "rwxrwxrwx"
         links = stats.st_nlink
         owner = self.owner
         group = self.owner  # For sake of simplicity
         size = stats.st_size
         modified_date = date.fromtimestamp(stats.st_mtime)
-        date_format = '%b %d %H:%m'
+        date_format = "%b %d %H:%m"
         modified = modified_date.strftime(date_format)
-        return f'{type}{base} {links} {owner} {group} {size} {modified}'
+        return f"{type}{base} {links} {owner} {group} {size} {modified}"
 
     def _create_or_append(self, mode, filename):
         if not self._is_name_valid(filename):
-            return 553, f'File name not allowed'
-        self._ftp_response(150, 'Opening data connection')
+            return 553, f"File name not allowed"
+        self._ftp_response(150, "Opening data connection")
         self._start_datasock()
         new_file = self._recvuntil(self.bcrlf, self.datasocket)
-        if self.type == 'I':
+        if self.type == "I":
             new_file = new_file.encode()
         self.datasocket.close()
         path = os.path.join(self.cwd, filename)
@@ -103,7 +102,6 @@ class FTPServerThread(ServerThread):
             print(e)
             return False
         return True
-
 
     # FTP API Commands
 
@@ -120,7 +118,7 @@ class FTPServerThread(ServerThread):
         except Exception as e:
             print(e)
         self._stop_datasock()
-        return 226, 'Closing data connection.'
+        return 226, "Closing data connection."
 
     def ACCT(self, arg=None):
         """
@@ -131,7 +129,7 @@ class FTPServerThread(ServerThread):
         :param arg:
         :return:
         """
-        return 401, 'Unauthorized, you are not logged in'
+        return 401, "Unauthorized, you are not logged in"
 
     def RNFR(self, arg=None):
         """
@@ -142,12 +140,12 @@ class FTPServerThread(ServerThread):
         :return:
         """
         if not self._is_name_valid(arg):
-            return 553, f'File name not allowed'
+            return 553, f"File name not allowed"
         file_path = os.path.abspath(os.path.join(self.cwd, arg))
         if not Path(file_path).exists():
-            return 553, f'File not exists {arg}'
+            return 553, f"File not exists {arg}"
         self.filename_cache = arg
-        return 350, 'File ready to rename'
+        return 350, "File ready to rename"
 
     def RNTO(self, arg=None):
         """
@@ -157,15 +155,15 @@ class FTPServerThread(ServerThread):
         :return:
         """
         if not self._is_name_valid(arg):
-            return 553, f'File name not allowed'
+            return 553, f"File name not allowed"
         old_filename_path = os.path.abspath(os.path.join(self.cwd, self.filename_cache))
         new_filename_path = os.path.abspath(os.path.join(self.cwd, arg))
         try:
             os.rename(old_filename_path, new_filename_path)
         except Exception as e:
             print(e)
-            return 553, f'Failed to rename {arg}'
-        return 250, f'File renamed to {arg}'
+            return 553, f"Failed to rename {arg}"
+        return 250, f"File renamed to {arg}"
 
     def RETR(self, arg=None):
         """
@@ -177,17 +175,17 @@ class FTPServerThread(ServerThread):
         :return:
         """
         if not self._is_name_valid(arg):
-            return 553, f'File name not allowed'
+            return 553, f"File name not allowed"
         file_path = os.path.abspath(os.path.join(self.cwd, arg))
         if not Path(file_path).exists():
-            return 553, f'File not exists {arg}'
-        self._ftp_response(150, 'Sending file')
+            return 553, f"File not exists {arg}"
+        self._ftp_response(150, "Sending file")
         self._start_datasock()
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             data = f.read()
-        self.datasocket.send(f'{data}\r\n'.encode())
+        self.datasocket.send(f"{data}\r\n".encode())
         self._stop_datasock()
-        return 250, 'OK.'
+        return 250, "OK."
 
     def STRU(self, arg=None):
         """
@@ -200,9 +198,9 @@ class FTPServerThread(ServerThread):
         :param arg:
         :return:
         """
-        if arg == 'F':
-            return 200, 'OK.'
-        return 500, 'Bad command or not implemented'
+        if arg == "F":
+            return 200, "OK."
+        return 500, "Bad command or not implemented"
 
     def DELE(self, arg=None):
         """
@@ -211,13 +209,13 @@ class FTPServerThread(ServerThread):
         :return:
         """
         if not self._is_name_valid(arg):
-            return 553, f'Wrong file name {arg}'
+            return 553, f"Wrong file name {arg}"
 
         if not Path(os.path.join(self.cwd, arg)).exists():
-            return 553, f'File not exists {arg}'
+            return 553, f"File not exists {arg}"
 
         os.remove(os.path.join(self.cwd, arg))
-        return 250, 'Deleted'
+        return 250, "Deleted"
 
     def NOOP(self, arg=None):
         """
@@ -226,7 +224,7 @@ class FTPServerThread(ServerThread):
         :param arg:
         :return:
         """
-        return 200, 'OK.'
+        return 200, "OK."
 
     def TYPE(self, arg=None):
         """
@@ -235,22 +233,22 @@ class FTPServerThread(ServerThread):
         :param arg:
         :return:
         """
-        if arg == 'A':
+        if arg == "A":
             self.type = arg
-            return 200, 'OK.'
-        if arg == 'I':
+            return 200, "OK."
+        if arg == "I":
             self.type = arg
-            return 200, 'OK.'
-        return 500, 'Bad command or not implemented'
+            return 200, "OK."
+        return 500, "Bad command or not implemented"
 
     def PORT(self, arg=None):
-        host_port = arg.split(',')
-        self.data_addr = '.'.join(host_port[:4])
+        host_port = arg.split(",")
+        self.data_addr = ".".join(host_port[:4])
         self.data_port = (int(host_port[4]) << 8) + int(host_port[5])
-        return 200, 'Get port.'
+        return 200, "Get port."
 
     def SYST(self, arg=None):
-        return 215, 'UNIX Type: L8'
+        return 215, "UNIX Type: L8"
 
     def STOR(self, arg=None):
         """
@@ -262,13 +260,13 @@ class FTPServerThread(ServerThread):
         :param arg:
         :return:
         """
-        if self.type == 'A':
-            mode = 'w'
+        if self.type == "A":
+            mode = "w"
         else:
-            mode = 'wb'
+            mode = "wb"
         if self._create_or_append(mode=mode, filename=arg):
-            return 226, 'Closing data connection'
-        return 501, 'Failed to create file'
+            return 226, "Closing data connection"
+        return 501, "Failed to create file"
 
     def APPE(self, arg=None):
         """
@@ -279,9 +277,9 @@ class FTPServerThread(ServerThread):
         :param arg:
         :return:
         """
-        if self._create_or_append(mode='a', filename=arg):
-            return 226, 'Closing data connection'
-        return 501, 'Failed to append file'
+        if self._create_or_append(mode="a", filename=arg):
+            return 226, "Closing data connection"
+        return 501, "Failed to append file"
 
     def FEAT(self, arg=None):
         """
@@ -292,28 +290,28 @@ class FTPServerThread(ServerThread):
         :param arg:
         :return:
         """
-        return 500, 'No extended features.'
+        return 500, "No extended features."
 
     def USER(self, arg=None):
         if self.is_anon:
-            return 230, 'OK.'
+            return 230, "OK."
         else:
-            return 530, 'Incorrect'
+            return 530, "Incorrect"
 
     def PASS(self, arg=None):
         if self.is_anon:
-            return 230, 'OK.'
+            return 230, "OK."
         else:
-            return 530, 'Incorrect'
+            return 530, "Incorrect"
 
     def QUIT(self, arg=None):
-        return 221, 'Goodbye'
+        return 221, "Goodbye"
 
     def CDUP(self, arg=None):
         if self.cwd == self.root:
-            return 230, 'OK.'
-        self.cwd = os.path.abspath(os.path.join(self.cwd, '..'))
-        return 230, 'OK.'
+            return 230, "OK."
+        self.cwd = os.path.abspath(os.path.join(self.cwd, ".."))
+        return 230, "OK."
 
     def PWD(self, arg=None):
         cwd = os.path.relpath(self.cwd, self.root)
@@ -321,32 +319,32 @@ class FTPServerThread(ServerThread):
 
     def MKD(self, arg=None):
         if not self._is_name_valid(arg):
-            return 553, f'Wrong directory name {arg}'
+            return 553, f"Wrong directory name {arg}"
         try:
             os.mkdir(os.path.join(self.cwd, arg))
         except FileExistsError:
-            return 553, f'Directory exists {arg}'
-        return 250, 'Created'
+            return 553, f"Directory exists {arg}"
+        return 250, "Created"
 
     def CWD(self, arg=None):
         if not self._is_name_valid(arg):
-            return 553, f'Wrong path {arg}'
+            return 553, f"Wrong path {arg}"
         cwd = os.path.abspath(os.path.join(self.cwd, arg))
         if not os.path.exists(cwd):
-            return 553, f'Directory {arg} not exists '
+            return 553, f"Directory {arg} not exists "
         self.cwd = cwd
-        return 250, 'OK.'
+        return 250, "OK."
 
     def LIST(self, arg=None):
-        self._ftp_response(150, 'Directory listing')
+        self._ftp_response(150, "Directory listing")
         self._start_datasock()
         entries = Path(self.cwd)
         for entry in entries.iterdir():
             info = self._get_entry_info(entry)
-            data = f'{info}\t{entry.name}'
-            self.datasocket.send(f'{data}\r\n'.encode())
+            data = f"{info}\t{entry.name}"
+            self.datasocket.send(f"{data}\r\n".encode())
         self._stop_datasock()
-        return 226, 'Directory send OK.'
+        return 226, "Directory send OK."
 
     def NLST(self, arg=None):
         return self.LIST(arg)
@@ -357,7 +355,6 @@ class FTPServerThread(ServerThread):
         self.serversocket.bind((self.host, 0))
         self.serversocket.listen(1)
         self.data_addr, self.data_port = self.serversocket.getsockname()
-        host_ip = self.data_addr.replace('.', ',')
-        port = f'{self.data_port >> 8 & 0xFF},{self.data_port & 0xFF}'
-        return 227, f'Entering Passive Mode ({host_ip},{port})'
-
+        host_ip = self.data_addr.replace(".", ",")
+        port = f"{self.data_port >> 8 & 0xFF},{self.data_port & 0xFF}"
+        return 227, f"Entering Passive Mode ({host_ip},{port})"
