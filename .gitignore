@@ -1,2 +1,4 @@
 root_dir/
 .idea/
+test/__pycache__/
+.pytest_cache/
