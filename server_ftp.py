@@ -322,6 +322,27 @@ class AnonymusFtpServerThread(ServerThread):
             return 553, f"Directory exists {arg}"
         return 250, "Created"
 
+    def RMD(self, arg=None):
+        """
+        This command causes the directory specified in the path name to be removed.
+        If a relative path is provided, the server assumes the specified directory to be a subdirectory of the
+        client's current working directory. To delete a file, the DELE command is used.
+        :param arg:
+        :return:
+        """
+        if not self._is_name_valid(arg):
+            return 553, f"Wrong directory name {arg}"
+        if not os.path.exists(os.path.join(self.cwd, arg)):
+            return 553, f"Directory not exists {arg}"
+        if len(os.listdir(os.path.join(self.cwd, arg))):
+            return 553, f"Directory {arg} is not empty."
+        try:
+            os.rmdir(os.path.join(self.cwd, arg))
+        except Exception:
+            return 553, f"Failed to remove directory {arg}"
+
+        return 250, "Removed"
+
     def CWD(self, arg=None):
         if not self._is_name_valid(arg):
             print('the path is not valid')
