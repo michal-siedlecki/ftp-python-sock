@@ -45,6 +45,7 @@ def escape_path():
 def files():
     return test_files
 
+
 @pytest.fixture
 def dirs():
     return test_dirs

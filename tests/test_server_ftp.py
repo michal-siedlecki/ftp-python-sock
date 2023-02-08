@@ -46,12 +46,13 @@ def test_cdup_cant_escape(ftp_client):
 
 def test_list(ftp_client, dirs):
     ls = ftp_client.nlst()
-    root = dirs.get('root')
+    root = dirs.get("root")
     assert len(ls) == len(os.listdir(root))
 
+
 def test_mkd(ftp_client, dirs):
-    new_dir_name = 'new_directory'
-    new_dir_path = os.path.join(dirs.get('root'), new_dir_name)
+    new_dir_name = "new_directory"
+    new_dir_path = os.path.join(dirs.get("root"), new_dir_name)
     if os.path.exists(new_dir_path):
         os.rmdir(new_dir_path)
     ftp_client.mkd(new_dir_name)
@@ -59,12 +60,13 @@ def test_mkd(ftp_client, dirs):
     assert ftp_client.lastresp == "250"
     assert exists
 
+
 def test_rmd(ftp_client, dirs):
-    dir_to_remove = dirs.get('test_rm')
-    exists = os.path.exists(os.path.join(dirs.get('root'), dir_to_remove))
+    dir_to_remove = dirs.get("test_rm")
+    exists = os.path.exists(os.path.join(dirs.get("root"), dir_to_remove))
     if not exists:
-        os.mkdir(os.path.join(dirs.get('root'), dir_to_remove))
+        os.mkdir(os.path.join(dirs.get("root"), dir_to_remove))
     ftp_client.rmd(dir_to_remove)
-    exists = os.path.exists(os.path.join(dirs.get('root'), dir_to_remove))
+    exists = os.path.exists(os.path.join(dirs.get("root"), dir_to_remove))
     assert ftp_client.lastresp == "250"
     assert not exists
