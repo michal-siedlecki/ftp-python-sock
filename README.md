@@ -9,7 +9,7 @@ ftp 127.0.0.1 -p 8000
 
 ```
 commands left to implement:
-'ALLO', 'HELP', 'REIN', 'REST', 'RETR', 'SITE', 'STAT','SMNT', 'STOU'
+'HELP', 'REIN', 'REST', 'RETR', 'STAT'
 
 ```
 

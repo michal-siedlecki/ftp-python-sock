@@ -1,6 +1,7 @@
 import os
 import time
 import socket
+import uuid
 from pathlib import Path
 from datetime import date
 from server_base import ServerThread
@@ -228,6 +229,40 @@ class AnonymusFtpServerThread(ServerThread):
         """
         return 200, "OK."
 
+
+    def ALLO(self, arg=None):
+        """
+        The ALLO command may be sent to a server that requires the necessary space for an uploaded to be reserved
+        before the transfer takes place. The argument shall be a decimal integer representing the number of bytes
+        (using the logical byte size) of storage to be reserved for the file.
+        A server that does not require space to be reserved in advance should treat the command as a NOOP operation.
+        :param arg:
+        :return:
+        """
+        return 200, "OK."
+
+
+    def SMNT(self, arg=None):
+        """
+        The SMNT command allows the user to mount a different file system data structure without altering their
+        login or accounting information. Transfer parameters are similarly unchanged.
+        The argument is a path name specifying a directory or other system dependent file group designator.
+        :param arg:
+        :return:
+        """
+        return 500, "Not implemented"
+
+    def SITE(self, arg=None):
+        """
+        The SITE command is used by the server to provide services to a client that may not be universally
+        supported by all FTP clients. These commands are commonly server specific implementations provided
+        to allow for additional functionality to FTP clients choosing to implement the command as well.
+        The SITE command is followed by the extended command and any additional parameters
+        :param arg:
+        :return:
+        """
+        return 500, "Not implemented"
+
     def TYPE(self, arg=None):
         """
         The TYPE command is issued to inform the server of the type of data that is being transferred by the client.
@@ -268,6 +303,33 @@ class AnonymusFtpServerThread(ServerThread):
             mode = "wb"
         if self._create_or_append(mode=mode, filename=arg):
             return 226, "Closing data connection"
+        return 501, "Failed to create file"
+
+    def STOU(self, arg=None):
+        """
+        Similar to the STOR command, the STOU command is issued after successfully establishing a data connection
+        to transfer a local file to the server. A file name is provided for the server to use.
+        If the file does not exist on the server, it is created. If the file already exists, it is not overwritten.
+        Instead, the server creates a unique file name and creates it for the transferred file.
+        The response by the server will contain the created file name.
+        :param arg:
+        :return:
+        """
+        if self.type == "A":
+            mode = "w"
+        else:
+            mode = "wb"
+        if not self._is_name_valid(arg):
+            return 553, f"File name not allowed"
+        uniq = False
+        if os.path.exists(os.path.join(self.cwd, arg)):
+            arg = str(uuid.uuid4())
+            uniq = True
+        file_created = self._create_or_append(mode=mode, filename=arg)
+        if file_created and not uniq:
+            return 226, "Closing data connection"
+        if file_created and uniq:
+            return 226, arg
         return 501, "Failed to create file"
 
     def APPE(self, arg=None):
