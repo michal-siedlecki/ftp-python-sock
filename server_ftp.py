@@ -16,6 +16,7 @@ class AnonymusFtpServerThread(ServerThread):
     f"""
     Anonymus FTP server. Allowed commands list: {', '.join(ALLOWED_COMMANDS)}
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.root = os.path.abspath(kwargs.get("root_dir"))
@@ -39,7 +40,7 @@ class AnonymusFtpServerThread(ServerThread):
             if cmd not in ALLOWED_COMMANDS:
                 self._ftp_response(500, "Bad command or not implemented")
                 continue
-            if cmd == 'HELP':
+            if cmd == "HELP":
                 self.sendall(self.HELP(arg))
                 continue
             try:
@@ -122,7 +123,6 @@ class AnonymusFtpServerThread(ServerThread):
             self._stop_datasock()
             return 226, "Closing data connection."
         return 225, "Data connection open, no transfer in progress."
-
 
     def ACCT(self, arg=None):
         """
@@ -475,6 +475,16 @@ class AnonymusFtpServerThread(ServerThread):
         self._stop_datasock()
         return 226, "Directory send OK."
 
+    def NLST(self, arg=None):
+        """
+        The NLST command is used to retrieve a list of files from the server over a previously
+        established data connection. Unlike the LIST command, the server will send only the list of files and no
+        other information on those files. If a parameter is specified, the server returns the list
+        of files contained in the provided path. If no parameter is present, the server uses
+        the client’s current working directory.
+        """
+        return self.LIST(arg)
+
     def HELP(self, arg=None):
         """
         Print an informative message about the meaning of command. If no argument is given,
@@ -482,8 +492,8 @@ class AnonymusFtpServerThread(ServerThread):
         """
         if arg in ALLOWED_COMMANDS:
             method = getattr(self, arg)
-            return method.__doc__.replace('\n', ' ') + self.crlf
-        return ', '.join(ALLOWED_COMMANDS) + self.crlf
+            return method.__doc__.replace("\n", " ") + self.crlf
+        return ", ".join(ALLOWED_COMMANDS) + self.crlf
 
     def PASV(self, arg=None):
         """
