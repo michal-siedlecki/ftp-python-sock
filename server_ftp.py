@@ -6,33 +6,41 @@ from pathlib import Path
 from datetime import date
 from server_base import ServerThread
 
-ALLOWED_COMMANDS = ['ABOR', 'ACCT', 'ALLO', 'APPE', 'CWD', 'DELE', 'HELP', 'LIST', 'MODE', 'NLST', 'NOOP',
-                    'PASS', 'PASV', 'PORT', 'QUIT', 'REIN', 'REST', 'RETR', 'RNFR', 'RNTO', 'SITE', 'STAT',
-                    'STOR', 'STRU', 'TYPE', 'USER', 'CDUP', 'MKD', 'PWD', 'RMD', 'SMNT', 'STOU', 'SYST', 'FEAT']
+ALLOWED_COMMANDS = ["ABOR", "ACCT", "ALLO", "APPE", "CWD", "DELE", "HELP", "LIST", "MODE", "NLST",
+                    "NOOP", "PASS", "PASV", "PORT", "QUIT", "REIN", "REST", "RETR", "RNFR", "RNTO",
+                    "SITE", "STAT", "STOR", "STRU", "TYPE", "USER", "CDUP", "MKD", "PWD", "RMD",
+                    "SMNT", "STOU", "SYST", "FEAT"]
 
 
 class AnonymusFtpServerThread(ServerThread):
+    f"""
+    Anonymus FTP server. Allowed commands list: {', '.join(ALLOWED_COMMANDS)}
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.root = os.path.abspath(kwargs.get('root_dir'))
+        self.root = os.path.abspath(kwargs.get("root_dir"))
         self.cwd = self.root
+        self.datasocket = None
+        self.serversocket = None
         self.pasv_mode = False
         self.type = "A"
         self.crlf = "\r\n"
         self.bcrlf = b"\r\n"
+        self.storage_bytes = 20_000_000
 
     def run(self):
         self._ftp_response(220, "Welcome!")
         while True:
-            msg = self._recvuntil(self.bcrlf)
+            msg = self.recvuntil(self.bcrlf)
             cmd, arg = msg[:4].strip(), msg[4:].strip()
 
-            now = time.strftime("%H:%M:%S")
-            print(f"[{now}]\tcmd: \t<{cmd}> \targ: <{arg}>")
             if not cmd:
                 break
             if cmd not in ALLOWED_COMMANDS:
                 self._ftp_response(500, "Bad command or not implemented")
+                continue
+            if cmd == 'HELP':
+                self.sendall(self.HELP(arg))
                 continue
             try:
                 method = getattr(self, cmd)
@@ -43,12 +51,6 @@ class AnonymusFtpServerThread(ServerThread):
                 self._ftp_response(500, "Bad command or not implemented")
 
     def _ftp_response(self, status, message):
-        """
-        Format FTP server response
-        :param status:
-        :param message:
-        :return:
-        """
         msg = f"{status} {message} {self.crlf}"
         self.sock.sendall(msg.encode())
 
@@ -61,8 +63,10 @@ class AnonymusFtpServerThread(ServerThread):
 
     def _stop_datasock(self):
         self.datasocket.close()
+        self.datasocket = None
         if self.pasv_mode:
             self.serversocket.close()
+            self.serversocket = None
 
     def _trim_anchor(self, path):
         anchor = Path(path).anchor
@@ -93,10 +97,10 @@ class AnonymusFtpServerThread(ServerThread):
             return False
         self._ftp_response(150, "Opening data connection")
         self._start_datasock()
-        new_file = self._recvuntil(self.bcrlf, self.datasocket)
+        new_file = self.recvuntil(self.bcrlf, self.datasocket)
         if self.type == "I":
             new_file = new_file.encode()
-        self.datasocket.close()
+        self._stop_datasock()
         path = os.path.join(self.cwd, filename)
         try:
             with open(path, mode) as f:
@@ -113,15 +117,12 @@ class AnonymusFtpServerThread(ServerThread):
         The ABOR command can be issued by the client to abort the previous FTP command.
         If the previous FTP command is still in progress or has already completed, the server will terminate its
         execution and close any associated data connection. This command does not cause the connection to close.
-        :param arg:
-        :return:
         """
-        try:
-            self.datasocket.close()
-        except Exception as e:
-            print(e)
-        self._stop_datasock()
-        return 226, "Closing data connection."
+        if self.datasocket:
+            self._stop_datasock()
+            return 226, "Closing data connection."
+        return 225, "Data connection open, no transfer in progress."
+
 
     def ACCT(self, arg=None):
         """
@@ -129,18 +130,14 @@ class AnonymusFtpServerThread(ServerThread):
         The account is not necessarily related to the USER .
         A client may log in using their username and password, however, an account may be required for
         specific access to server resources.
-        :param arg:
-        :return:
         """
-        return 401, "Unauthorized, you are not logged in"
+        return 502, "Command not implemented"
 
     def RNFR(self, arg=None):
         """
         The RNFR command is issued when an FTP client wants to rename a file on the server.
         The client specifies the name of the file to be renamed along with the command.
         After issuing an RNFR command, an RNTO command must immediately follow.
-        :param arg:
-        :return:
         """
         if not self._is_name_valid(arg):
             return 553, f"File name not allowed"
@@ -153,9 +150,6 @@ class AnonymusFtpServerThread(ServerThread):
     def RNTO(self, arg=None):
         """
         The RNTO command is used to specify the new name of a file specified in a preceding RNFR (Rename From) command.
-
-        :param arg:
-        :return:
         """
         if not self._is_name_valid(arg):
             return 553, f"File name not allowed"
@@ -174,8 +168,6 @@ class AnonymusFtpServerThread(ServerThread):
         when it wishes to download a copy of a file on the server. The client provides the file name
         it wishes to download along with the RETR command. The server will send a copy of the file to the client.
         This command does not affect the contents of the server’s copy of the file.
-        :param arg:
-        :return:
         """
         if not self._is_name_valid(arg):
             return 553, f"File name not allowed"
@@ -198,8 +190,6 @@ class AnonymusFtpServerThread(ServerThread):
         F - File (no record structure)
         R - Record structure (Not implemented)
         P - Page structure (Not implemented)
-        :param arg:
-        :return:
         """
         if arg == "F":
             return 200, "OK."
@@ -207,16 +197,13 @@ class AnonymusFtpServerThread(ServerThread):
 
     def DELE(self, arg=None):
         """
-        Delete file
-        :param arg:
-        :return:
+        The DELE command is used to delete the specified file from the server.
+        To delete a directory, use the RMD command.
         """
         if not self._is_name_valid(arg):
             return 553, f"Wrong file name {arg}"
-
         if not Path(os.path.join(self.cwd, arg)).exists():
             return 553, f"File not exists {arg}"
-
         os.remove(os.path.join(self.cwd, arg))
         return 250, "Deleted"
 
@@ -224,11 +211,8 @@ class AnonymusFtpServerThread(ServerThread):
         """
         The NOOP command does not cause the server to perform any action
         beyond acknowledging the receipt of the command.
-        :param arg:
-        :return:
         """
         return 200, "OK."
-
 
     def ALLO(self, arg=None):
         """
@@ -236,19 +220,14 @@ class AnonymusFtpServerThread(ServerThread):
         before the transfer takes place. The argument shall be a decimal integer representing the number of bytes
         (using the logical byte size) of storage to be reserved for the file.
         A server that does not require space to be reserved in advance should treat the command as a NOOP operation.
-        :param arg:
-        :return:
         """
         return 200, "OK."
-
 
     def SMNT(self, arg=None):
         """
         The SMNT command allows the user to mount a different file system data structure without altering their
         login or accounting information. Transfer parameters are similarly unchanged.
         The argument is a path name specifying a directory or other system dependent file group designator.
-        :param arg:
-        :return:
         """
         return 500, "Not implemented"
 
@@ -258,17 +237,50 @@ class AnonymusFtpServerThread(ServerThread):
         supported by all FTP clients. These commands are commonly server specific implementations provided
         to allow for additional functionality to FTP clients choosing to implement the command as well.
         The SITE command is followed by the extended command and any additional parameters
-        :param arg:
-        :return:
         """
         return 500, "Not implemented"
+
+    def REST(self, arg=None):
+        """
+        The REST command is used to specify a marker to the server for the purposes of resuming a file transfer.
+        Issuing the REST command does not actually initiate the transfer. After issuing a REST command,
+        the client must send the appropriate FTP command to transfer the file. The server will use the marker
+        specified in the REST command to resume file transfer at the specified point.
+        """
+        if not isinstance(arg, int):
+            return 533, "Bad argument"
+        return 500, "Not implemented"
+
+    def STAT(self, arg=None):
+        """
+        If the STAT command is issued during a file transfer, information about the current
+        file transfer is sent to the client. If a path name is provided with the command, it is analogous
+        to the LIST command except for the file information for the specified pathname is sent over the command
+        connection instead of a data connection. A partial pathname can be provided instead, in which case the
+        server will respond with a list of file names or attributes associated with that specification.
+        If no parameter is provided and a file transfer is not in progress, the server will respond with general
+        status information about the FTP server and the current connection.
+        """
+        return 500, "Not implemented"
+
+    def REIN(self, arg=None):
+        """
+        The REIN resets the FTP connection to the state it is in when the client first connects to the FTP server.
+        Any file transfers in progress when the REIN command is sent are allowed to finish.
+        The server should reset all parameters to their default states and flush all I/O and previous
+        account information. The command connection remains open and a USER command may be expected to follow.
+        """
+        while self.datasocket or self.serversocket:
+            time.sleep(1)
+        self.cwd = self.root
+        self.pasv_mode = False
+        self.type = "A"
+        return 220, "Ready.."
 
     def TYPE(self, arg=None):
         """
         The TYPE command is issued to inform the server of the type of data that is being transferred by the client.
         Most modern Windows FTP clients deal only with type A (ASCII) and type I (image/binary).
-        :param arg:
-        :return:
         """
         if arg == "A":
             self.type = arg
@@ -279,12 +291,22 @@ class AnonymusFtpServerThread(ServerThread):
         return 500, "Bad command or not implemented"
 
     def PORT(self, arg=None):
+        """
+        The PORT command is issued by the client to initiate a data connection required to transfer data
+        (such as directory listings or files) between the client and server.
+        This command is used during “active” mode transfers.
+        """
         host_port = arg.split(",")
         self.data_addr = ".".join(host_port[:4])
         self.data_port = (int(host_port[4]) << 8) + int(host_port[5])
         return 200, "Get port."
 
     def SYST(self, arg=None):
+        """
+        A client can issue this command to the server to determine the operating system running on the server.
+        Not all server responses are accurate in this regard, however, as some servers respond with the system they
+        emulate or may not respond at all due to potential security risks.
+        """
         return 215, "UNIX Type: L8"
 
     def STOR(self, arg=None):
@@ -294,15 +316,13 @@ class AnonymusFtpServerThread(ServerThread):
         If the file already exists on the server, it is replaced by the uploaded file.
         If the file does not exist, it is created.
         This command does not affect the contents of the client's local copy of the file.
-        :param arg:
-        :return:
         """
         if self.type == "A":
             mode = "w"
         else:
             mode = "wb"
         if self._create_or_append(mode=mode, filename=arg):
-            return 226, "Closing data connection"
+            return 250, "File created"
         return 501, "Failed to create file"
 
     def STOU(self, arg=None):
@@ -312,8 +332,6 @@ class AnonymusFtpServerThread(ServerThread):
         If the file does not exist on the server, it is created. If the file already exists, it is not overwritten.
         Instead, the server creates a unique file name and creates it for the transferred file.
         The response by the server will contain the created file name.
-        :param arg:
-        :return:
         """
         if self.type == "A":
             mode = "w"
@@ -338,8 +356,6 @@ class AnonymusFtpServerThread(ServerThread):
         when it wishes to upload data to the server. The client provides the file name it wishes to use for the upload.
         If the file already exists on the server, the data is appended to the existing file.
         If the file does not exist, it is created.
-        :param arg:
-        :return:
         """
         if self._create_or_append(mode="a", filename=arg):
             return 226, "Closing data connection"
@@ -351,31 +367,52 @@ class AnonymusFtpServerThread(ServerThread):
         what extended features the FTP server supports. If this command is supported, the server
         will reply with a multi-line response where each line of the response contains an extended feature command
         supported by the server.
-        :param arg:
-        :return:
         """
         return 500, "No extended features."
 
     def USER(self, arg=None):
+        """
+        USER is followed by a text string identifying the user.
+        The user identification is that which is required by the server for access to its file system.
+        This command will normally be the first command transmitted by the user after the control connections are made.
+        """
         return 230, "OK."
 
     def PASS(self, arg=None):
+        """
+        A string specifying the user's password follows the PASS command. This command must be immediately
+        preceded by the user name command and, for most sites, completes the user's identification for access control.
+        """
         return 230, "OK."
 
     def QUIT(self, arg=None):
+        """
+        Close an ftp connection to a remote system by using the bye command.
+        """
         return 221, "Goodbye"
 
     def CDUP(self, arg=None):
+        """
+        The CDUP command causes the server to change the client's current working directory to the
+        immediate parent directory of the current working directory.
+        """
         if self.cwd == self.root:
             return 553, "Can't leave root directory"
         self.cwd = os.path.abspath(os.path.join(self.cwd, ".."))
         return 230, "OK."
 
     def PWD(self, arg=None):
+        """
+        This command displays the current working directory on the server for the logged in user.
+        """
         cwd = os.path.relpath(self.cwd, self.root)
         return 257, f'"/{cwd}"'
 
     def MKD(self, arg=None):
+        """
+        This command causes the directory specified in the pathname to be created on the server.
+        If the specified directory is a relative directory, it is created in the client’s current working directory.
+        """
         if not self._is_name_valid(arg):
             return 553, f"Wrong directory name {arg}"
         try:
@@ -389,8 +426,6 @@ class AnonymusFtpServerThread(ServerThread):
         This command causes the directory specified in the path name to be removed.
         If a relative path is provided, the server assumes the specified directory to be a subdirectory of the
         client's current working directory. To delete a file, the DELE command is used.
-        :param arg:
-        :return:
         """
         if not self._is_name_valid(arg):
             return 553, f"Wrong directory name {arg}"
@@ -406,8 +441,13 @@ class AnonymusFtpServerThread(ServerThread):
         return 250, "Removed"
 
     def CWD(self, arg=None):
+        """
+        The CWD command is issued to change the client's current working directory
+        to the path specified with the command. FTP Voyager and other GUI-based FTP clients will automatically
+        issue these commands as the user browses the remote file system from within the program.
+        """
         if not self._is_name_valid(arg):
-            print('the path is not valid')
+            print("the path is not valid")
             return 553, f"Wrong path {arg}"
         arg_tr = self._trim_anchor(arg)
         location = Path.joinpath(Path(self.root), Path(arg_tr))
@@ -417,6 +457,14 @@ class AnonymusFtpServerThread(ServerThread):
         return 250, "OK."
 
     def LIST(self, arg=None):
+        """
+        The LIST command is issued to transfer information about files on the server through a
+        previously established data connection. When no argument is provided with the LIST command,
+        the server will send information on the files in the current working directory.
+        If the argument specifies a directory or other group of files, the server should transfer
+        a list of files in the specified directory. If the argument specifies a file, then the server
+        should send current information about the file.
+        """
         self._ftp_response(150, "Directory listing")
         self._start_datasock()
         entries = Path(self.cwd)
@@ -427,10 +475,21 @@ class AnonymusFtpServerThread(ServerThread):
         self._stop_datasock()
         return 226, "Directory send OK."
 
-    def NLST(self, arg=None):
-        return self.LIST(arg)
+    def HELP(self, arg=None):
+        """
+        Print an informative message about the meaning of command. If no argument is given,
+        ftp prints a list of the known commands.
+        """
+        if arg in ALLOWED_COMMANDS:
+            method = getattr(self, arg)
+            return method.__doc__.replace('\n', ' ') + self.crlf
+        return ', '.join(ALLOWED_COMMANDS) + self.crlf
 
     def PASV(self, arg=None):
+        """
+        There are two ways to transfer data in FTP communications, active ( PORT ) and PASV .
+        PASV command changes FTP communication into the passive mode.
+        """
         self.pasv_mode = True
         self.serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.serversocket.bind((self.host, 0))

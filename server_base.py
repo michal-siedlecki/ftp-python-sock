@@ -28,14 +28,14 @@ class ServerThread(threading.Thread):
     def stop(self):
         self.sock.close()
 
-    def _sendall(self, data):
+    def sendall(self, data):
         self.sock.sendall(data.encode())
 
-    def _recvall(self, amount):
+    def recvall(self, amount):
         data_raw = self.sock.recv(amount)
         return data_raw.decode()
 
-    def _recvuntil(self, end, sock=None):
+    def recvuntil(self, end, sock=None):
         buff = bytearray()
         s = self.sock if not sock else sock
         while end not in buff:
