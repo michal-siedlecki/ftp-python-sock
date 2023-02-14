@@ -6,6 +6,8 @@ from pathlib import Path
 from datetime import date
 from server_base import ServerThread
 
+from exceptions import *
+
 ALLOWED_COMMANDS = ["ABOR", "ACCT", "ALLO", "APPE", "CWD", "DELE", "HELP", "LIST", "MODE", "NLST",
                     "NOOP", "PASS", "PASV", "PORT", "QUIT", "REIN", "REST", "RETR", "RNFR", "RNTO",
                     "SITE", "STAT", "STOR", "STRU", "TYPE", "USER", "CDUP", "MKD", "PWD", "RMD",
@@ -27,7 +29,6 @@ class AnonymusFtpServerThread(ServerThread):
         self.type = "A"
         self.crlf = "\r\n"
         self.bcrlf = b"\r\n"
-        self.storage_bytes = 20_000_000
 
     def run(self):
         self._ftp_response(220, "Welcome!")
@@ -95,7 +96,7 @@ class AnonymusFtpServerThread(ServerThread):
 
     def _create_or_append(self, mode, filename):
         if not self._is_name_valid(filename):
-            return False
+            raise WrongFilename
         self._ftp_response(150, "Opening data connection")
         self._start_datasock()
         new_file = self.recvuntil(self.bcrlf, self.datasocket)
@@ -321,9 +322,11 @@ class AnonymusFtpServerThread(ServerThread):
             mode = "w"
         else:
             mode = "wb"
-        if self._create_or_append(mode=mode, filename=arg):
-            return 250, "File created"
-        return 501, "Failed to create file"
+        try:
+            self._create_or_append(mode=mode, filename=arg)
+        except Exception as e:
+            return 501, "Failed to create"
+        return 250, "File created"
 
     def STOU(self, arg=None):
         """
