@@ -7,11 +7,6 @@ python main.py
 ftp 127.0.0.1 -p 8000
 ```
 
-```
-commands left to implement:
-'HELP', 'REIN', 'REST', 'RETR', 'STAT'
-
-```
 
 ## Contact
 

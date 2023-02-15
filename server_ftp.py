@@ -1,3 +1,4 @@
+import datetime
 import os
 import time
 import socket
@@ -35,7 +36,7 @@ class AnonymusFtpServerThread(ServerThread):
         while True:
             msg = self.recvuntil(self.bcrlf)
             cmd, arg = msg[:4].strip(), msg[4:].strip()
-
+            print(f'[{datetime.datetime.now().strftime("%m-%d-%Y %H:%M:%S")}] {msg}')
             if not cmd:
                 break
             if cmd not in ALLOWED_COMMANDS:
@@ -48,6 +49,8 @@ class AnonymusFtpServerThread(ServerThread):
                 method = getattr(self, cmd)
                 status, message = method(arg)
                 self._ftp_response(status, message)
+            except FTPException as ftp_e:
+                self._ftp_response(*ftp_e.response)
             except Exception as e:
                 print(f"Got exception {e}")
                 self._ftp_response(500, "Bad command or not implemented")
@@ -96,7 +99,7 @@ class AnonymusFtpServerThread(ServerThread):
 
     def _create_or_append(self, mode, filename):
         if not self._is_name_valid(filename):
-            raise WrongFilename
+            return False
         self._ftp_response(150, "Opening data connection")
         self._start_datasock()
         new_file = self.recvuntil(self.bcrlf, self.datasocket)
@@ -132,7 +135,7 @@ class AnonymusFtpServerThread(ServerThread):
         A client may log in using their username and password, however, an account may be required for
         specific access to server resources.
         """
-        return 502, "Command not implemented"
+        raise CommandNotImplemented
 
     def RNFR(self, arg=None):
         """
@@ -141,10 +144,10 @@ class AnonymusFtpServerThread(ServerThread):
         After issuing an RNFR command, an RNTO command must immediately follow.
         """
         if not self._is_name_valid(arg):
-            return 553, f"File name not allowed"
+            raise WrongFilename
         file_path = os.path.abspath(os.path.join(self.cwd, arg))
         if not Path(file_path).exists():
-            return 553, f"File not exists {arg}"
+            raise FileNotExists
         self.filename_cache = arg
         return 350, "File ready to rename"
 
@@ -153,14 +156,13 @@ class AnonymusFtpServerThread(ServerThread):
         The RNTO command is used to specify the new name of a file specified in a preceding RNFR (Rename From) command.
         """
         if not self._is_name_valid(arg):
-            return 553, f"File name not allowed"
+            raise WrongFilename
         old_filename_path = os.path.abspath(os.path.join(self.cwd, self.filename_cache))
         new_filename_path = os.path.abspath(os.path.join(self.cwd, arg))
         try:
             os.rename(old_filename_path, new_filename_path)
         except Exception as e:
-            print(e)
-            return 553, f"Failed to rename {arg}"
+            raise FailedRequest
         return 250, f"File renamed to {arg}"
 
     def RETR(self, arg=None):
@@ -171,10 +173,10 @@ class AnonymusFtpServerThread(ServerThread):
         This command does not affect the contents of the server’s copy of the file.
         """
         if not self._is_name_valid(arg):
-            return 553, f"File name not allowed"
+            raise WrongFilename
         file_path = os.path.abspath(os.path.join(self.cwd, arg))
         if not Path(file_path).exists():
-            return 553, f"File not exists {arg}"
+            raise FileNotExists
         self._ftp_response(150, "Sending file")
         self._start_datasock()
         with open(file_path, "r") as f:
@@ -194,7 +196,7 @@ class AnonymusFtpServerThread(ServerThread):
         """
         if arg == "F":
             return 200, "OK."
-        return 500, "Bad command or not implemented"
+        raise CommandNotImplemented
 
     def DELE(self, arg=None):
         """
@@ -202,9 +204,9 @@ class AnonymusFtpServerThread(ServerThread):
         To delete a directory, use the RMD command.
         """
         if not self._is_name_valid(arg):
-            return 553, f"Wrong file name {arg}"
+            raise WrongFilename
         if not Path(os.path.join(self.cwd, arg)).exists():
-            return 553, f"File not exists {arg}"
+            raise FileNotExists
         os.remove(os.path.join(self.cwd, arg))
         return 250, "Deleted"
 
@@ -230,7 +232,7 @@ class AnonymusFtpServerThread(ServerThread):
         login or accounting information. Transfer parameters are similarly unchanged.
         The argument is a path name specifying a directory or other system dependent file group designator.
         """
-        return 500, "Not implemented"
+        raise CommandNotImplemented
 
     def SITE(self, arg=None):
         """
@@ -239,7 +241,7 @@ class AnonymusFtpServerThread(ServerThread):
         to allow for additional functionality to FTP clients choosing to implement the command as well.
         The SITE command is followed by the extended command and any additional parameters
         """
-        return 500, "Not implemented"
+        raise CommandNotImplemented
 
     def REST(self, arg=None):
         """
@@ -249,8 +251,8 @@ class AnonymusFtpServerThread(ServerThread):
         specified in the REST command to resume file transfer at the specified point.
         """
         if not isinstance(arg, int):
-            return 533, "Bad argument"
-        return 500, "Not implemented"
+            raise WrongAttribute
+        raise CommandNotImplemented
 
     def STAT(self, arg=None):
         """
@@ -262,7 +264,7 @@ class AnonymusFtpServerThread(ServerThread):
         If no parameter is provided and a file transfer is not in progress, the server will respond with general
         status information about the FTP server and the current connection.
         """
-        return 500, "Not implemented"
+        raise CommandNotImplemented
 
     def REIN(self, arg=None):
         """
@@ -289,7 +291,7 @@ class AnonymusFtpServerThread(ServerThread):
         if arg == "I":
             self.type = arg
             return 200, "OK."
-        return 500, "Bad command or not implemented"
+        raise CommandNotImplemented
 
     def PORT(self, arg=None):
         """
@@ -325,7 +327,7 @@ class AnonymusFtpServerThread(ServerThread):
         try:
             self._create_or_append(mode=mode, filename=arg)
         except Exception as e:
-            return 501, "Failed to create"
+            raise FailedRequest
         return 250, "File created"
 
     def STOU(self, arg=None):
@@ -341,7 +343,7 @@ class AnonymusFtpServerThread(ServerThread):
         else:
             mode = "wb"
         if not self._is_name_valid(arg):
-            return 553, f"File name not allowed"
+            raise WrongFilename
         uniq = False
         if os.path.exists(os.path.join(self.cwd, arg)):
             arg = str(uuid.uuid4())
@@ -351,7 +353,7 @@ class AnonymusFtpServerThread(ServerThread):
             return 226, "Closing data connection"
         if file_created and uniq:
             return 226, arg
-        return 501, "Failed to create file"
+        raise FailedRequest
 
     def APPE(self, arg=None):
         """
@@ -362,7 +364,7 @@ class AnonymusFtpServerThread(ServerThread):
         """
         if self._create_or_append(mode="a", filename=arg):
             return 226, "Closing data connection"
-        return 501, "Failed to append file"
+        raise FailedRequest
 
     def FEAT(self, arg=None):
         """
@@ -371,7 +373,7 @@ class AnonymusFtpServerThread(ServerThread):
         will reply with a multi-line response where each line of the response contains an extended feature command
         supported by the server.
         """
-        return 500, "No extended features."
+        raise CommandNotImplemented
 
     def USER(self, arg=None):
         """
@@ -400,7 +402,7 @@ class AnonymusFtpServerThread(ServerThread):
         immediate parent directory of the current working directory.
         """
         if self.cwd == self.root:
-            return 553, "Can't leave root directory"
+            raise WrongAttribute
         self.cwd = os.path.abspath(os.path.join(self.cwd, ".."))
         return 230, "OK."
 
@@ -417,11 +419,11 @@ class AnonymusFtpServerThread(ServerThread):
         If the specified directory is a relative directory, it is created in the client’s current working directory.
         """
         if not self._is_name_valid(arg):
-            return 553, f"Wrong directory name {arg}"
+            raise WrongAttribute
         try:
             os.mkdir(os.path.join(self.cwd, arg))
         except FileExistsError:
-            return 553, f"Directory exists {arg}"
+            raise DirectoryExists
         return 250, "Created"
 
     def RMD(self, arg=None):
@@ -431,16 +433,15 @@ class AnonymusFtpServerThread(ServerThread):
         client's current working directory. To delete a file, the DELE command is used.
         """
         if not self._is_name_valid(arg):
-            return 553, f"Wrong directory name {arg}"
+            raise WrongFilename
         if not os.path.exists(os.path.join(self.cwd, arg)):
-            return 553, f"Directory not exists {arg}"
+            raise FileNotExists
         if len(os.listdir(os.path.join(self.cwd, arg))):
-            return 553, f"Directory {arg} is not empty."
+            raise DirectoryNotEmpty
         try:
             os.rmdir(os.path.join(self.cwd, arg))
         except Exception:
-            return 553, f"Failed to remove directory {arg}"
-
+            raise FailedRequest
         return 250, "Removed"
 
     def CWD(self, arg=None):
@@ -450,12 +451,11 @@ class AnonymusFtpServerThread(ServerThread):
         issue these commands as the user browses the remote file system from within the program.
         """
         if not self._is_name_valid(arg):
-            print("the path is not valid")
-            return 553, f"Wrong path {arg}"
+            raise WrongFilename
         arg_tr = self._trim_anchor(arg)
         location = Path.joinpath(Path(self.root), Path(arg_tr))
         if not location.exists():
-            return 553, f"Directory {arg} not exists "
+            raise FileNotExists
         self.cwd = location.absolute()
         return 250, "OK."
 
@@ -468,13 +468,20 @@ class AnonymusFtpServerThread(ServerThread):
         a list of files in the specified directory. If the argument specifies a file, then the server
         should send current information about the file.
         """
+        if arg and not self._is_name_valid(arg):
+            raise WrongFilename
+        path = arg if arg else self.cwd
         self._ftp_response(150, "Directory listing")
+        entry = Path(path)
+        info = []
+        if entry.is_dir():
+            for e in entry.iterdir():
+                info.append(self._get_entry_info(e))
+        else:
+            info.append(self._get_entry_info(entry))
         self._start_datasock()
-        entries = Path(self.cwd)
-        for entry in entries.iterdir():
-            info = self._get_entry_info(entry)
-            data = f"{info}"
-            self.datasocket.send(f"{data}{self.crlf}".encode())
+        for i in info:
+            self.datasocket.send(f"{i}{self.crlf}".encode())
         self._stop_datasock()
         return 226, "Directory send OK."
 

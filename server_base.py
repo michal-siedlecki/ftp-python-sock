@@ -1,7 +1,6 @@
 import socket
 import threading
 
-
 class ServerThread(threading.Thread):
     def __init__(
         self, host, port, server_type=None, server_config=None, sock=None, **kwargs
@@ -20,7 +19,6 @@ class ServerThread(threading.Thread):
         _sock.listen(self.queue)
         while True:
             self.sock, _ = _sock.accept()
-            print(f"{_} connected")
             self.server_type(
                 host=self.host, port=self.port, **self.server_config, sock=self.sock
             ).start()
