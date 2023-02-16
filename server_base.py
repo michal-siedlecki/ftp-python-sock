@@ -24,7 +24,8 @@ class ServerThread(threading.Thread):
             ).start()
 
     def stop(self):
-        self.sock.close()
+        if self.sock:
+            self.sock.close()
 
     def sendall(self, data):
         self.sock.sendall(data.encode())
