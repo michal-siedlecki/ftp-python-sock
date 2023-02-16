@@ -3,6 +3,7 @@ import os
 import time
 import socket
 import uuid
+import random
 from pathlib import Path
 from datetime import date
 from server_base import ServerThread
@@ -310,7 +311,13 @@ class AnonymusFtpServerThread(ServerThread):
         Not all server responses are accurate in this regard, however, as some servers respond with the system they
         emulate or may not respond at all due to potential security risks.
         """
-        return 215, "UNIX Type: L8"
+        syst_name = random.choice(["ASP", "AUGUST", "BKY", "CCP", "DOS/360", "ELF", "EPOS", "EXEC-8", "GCOS", "GPOS",
+                                   "ITS", "INTERCOM", "INTERLISP", "KRONOS", "MCP", "MOS", "MPX-RT", "MULTICS", "MVT",
+                                   "NOS", "NOS/BE", "OS/MVS", "OS/MVT", "RIG", "RSX-11M", "RT11", "SCOPE", "SIGNAL",
+                                   "SINTRAN", "TAC", "TENEX", "TOPS-10", "TOPS-20", "TSS", "UNIX", "VM/370", "VM/CMS",
+                                   "VMS", "WAITS", "XDE"])
+
+        return 215, syst_name
 
     def STOR(self, arg=None):
         """
