@@ -7,13 +7,10 @@ the mandatory FTP commands specified in RFC 5797.
 ## Using FTP server locally
 For local usage you need to run `main.py` script with optional settings:
 ```
-
- -h, --help            show this help message and exit
-  -p PORT, --port PORT  <Optional> Specify the port number for FTP Server (example python main.py -p 8888). Default value: 8000
-  -hs HOST, --host HOST
-                        <Optional> Specify the host for FTP Server (example python main.py -h 127.0.0.1). Default value: 127.0.0.1
-  -r ROOT, --root ROOT  <Optional> Specify the root directory for FTP Server (example python main.py -r asdf). Default value: root_dir
-
+-h, --help              show this help message and exit
+-p PORT, --port PORT    <Optional> Specify the port number for FTP Server (example python main.py -p 8888). Default value: 8000
+-hs HOST, --host HOST   <Optional> Specify the host for FTP Server (example python main.py -h 127.0.0.1). Default value: 127.0.0.1
+-r ROOT, --root ROOT    <Optional> Specify the root directory for FTP Server (example python main.py -r asdf). Default value: root_dir
 ```
 or run with default settings:
 ```
